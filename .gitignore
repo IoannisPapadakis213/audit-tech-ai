@@ -1,4 +1,20 @@
+# Python
 venv/
+.venv/
 __pycache__/
+*.pyc
+.pytest_cache/
+
+# Δεδομένα: παράγονται από τον κώδικα, δεν ανεβαίνουν στο GitHub
+data/
+*.db
+
+# Μυστικά (API keys κ.λπ.)
+.env
+
+# Node / React
+node_modules/
+dist/
+
+# macOS
 .DS_Store
-data/*.csv
