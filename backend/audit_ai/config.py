@@ -63,3 +63,36 @@ GL_REQUIRED_FIELDS = (
     "journal_id", "line_id", "posting_date", "entry_datetime", "account",
     "debit", "credit", "created_by", "source",
 )
+
+# ---------- Κατώφλια κανόνων ----------
+PERIOD_END_WINDOW_DAYS = 10     # "κοντά στο κλείσιμο" = τελευταίες 10 μέρες
+ROUND_AMOUNT_MIN = 10_000       # στρογγυλό ποσό: τουλάχιστον 10.000 €...
+ROUND_AMOUNT_MODULO = 1_000     # ...και ακέραιες χιλιάδες (π.χ. 25.000)
+DUPLICATE_WINDOW_DAYS = 7       # ίδια πληρωμή δύο φορές μέσα σε 7 μέρες
+RARE_ACCOUNT_MAX_USES = 5       # λογαριασμός που χρησιμοποιήθηκε ≤ 5 φορές τον χρόνο
+BALANCE_TOLERANCE = 0.01        # ανοχή στρογγυλοποίησης: 1 λεπτό
+
+# ---------- Στατιστική και ML ----------
+ROBUST_Z_THRESHOLD = 3.5
+ROBUST_Z_MIN_LINES = 30
+BENFORD_MIN_AMOUNT = 10
+BENFORD_MIN_SAMPLE = 300
+BENFORD_MAD_LIMITS = {"close": 0.006, "acceptable": 0.012, "marginal": 0.015}
+ISOLATION_FOREST = {"n_estimators": 200, "contamination": 0.01, "random_state": 42}
+
+# ---------- Βάρη κινδύνου (πόντοι ανά κανόνα) ----------
+RULE_WEIGHTS = {
+    "post_close": 5,          # εγγραφή μετά το κλείσιμο
+    "senior_mgmt_user": 5,    # την έκανε ο CFO / CEO
+    "unauthorized_user": 4,   # χρήστης εκτός λίστας
+    "period_end_manual": 3,   # χειροκίνητη, κοντά στο κλείσιμο
+    "duplicate": 3,           # πιθανή διπλή πληρωμή
+    "round_amount": 2,
+    "weekend_holiday": 2,
+    "rare_account": 2,
+    "robust_z_outlier": 2,    # ακραίο ποσό για τον λογαριασμό
+    "isolation_forest": 2,    # "περίεργη" κατά το ML
+    "after_hours": 1,
+    "no_description": 1,      # κενή αιτιολογία
+}
+RISK_SCORE_THRESHOLD = 6      # από 6 πόντους και πάνω -> λίστα ελεγκτή
