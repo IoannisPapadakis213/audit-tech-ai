@@ -1,0 +1,16 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Δεδομένα: τα παράγει ο κώδικας, δεν ανεβαίνουν
+data/
+*.db
+*.xlsx
+
+# Μυστικά
+.env
+
+# macOS
+.DS_Store
