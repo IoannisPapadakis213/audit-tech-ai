@@ -92,3 +92,101 @@ def normal_activity(led, rng):
         depreciation = random_amount(rng, 8_000)
         led.add_journal([("66.00", depreciation, 0.0), ("14.00", 0.0, depreciation)],
                         month_end + pd.Timedelta(hours=23, minutes=30), "SYS_BATCH", "Automatic", "Αποσβέσεις μήνα")
+
+
+# ======================= Μέρος Γ: φυτεμένες ανωμαλίες =======================
+
+def plant_anomalies(led, rng):
+    """Φυτεύει ύποπτες εγγραφές, μία ομάδα για κάθε κανόνα ISA 240.
+
+    Επιστρέφει το ground truth: λίστα από (journal_id, anomaly_type).
+    """
+    truth = []
+    days = working_days()
+
+    def plant(kind, lines, entry, user, source="Manual", description="Λογιστική τακτοποίηση", **extra):
+        journal_id = led.add_journal(lines, entry, user, source, description, **extra)
+        truth.append((journal_id, kind))
+        return journal_id
+
+    def accrual(amount, debit_account="64.00"):
+        """Χειροκίνητη πρόβλεψη εξόδου: Χ έξοδο / Π πιστωτές."""
+        return [(debit_account, amount, 0.0), ("53.00", 0.0, amount)]
+
+    def some_day():
+        return days[int(rng.integers(0, len(days)))]
+
+    # 1. Post-close: γράφτηκε Ιαν-Φεβ 2026, αλλά «κάθεται» στις 31/12/2025
+    for _ in range(5):
+        entry = pd.Timestamp("2026-01-05") + pd.Timedelta(days=int(rng.integers(0, 50)), hours=11)
+        plant("post_close", accrual(random_amount(rng, 3_000)), entry, "ACC_02",
+              posting_date=cfg.FISCAL_YEAR_END)
+
+    # 2. Η διοίκηση περνάει η ίδια εγγραφές (management override)
+    for _ in range(4):
+        plant("senior_mgmt_user", accrual(random_amount(rng, 4_000)), office_time(rng, some_day()), "CFO")
+
+    # 3. Χρήστης που δεν είναι στη λίστα των εξουσιοδοτημένων
+    for _ in range(4):
+        plant("unauthorized_user", accrual(random_amount(rng, 2_000)), office_time(rng, some_day()), "TEMP_USER")
+
+    # 4. Χειροκίνητη εγγραφή στις τελευταίες μέρες του Δεκεμβρίου
+    december_end = days[(days.month == 12) & (days.day >= 22)]
+    for _ in range(5):
+        day = december_end[int(rng.integers(0, len(december_end)))]
+        plant("period_end_manual", accrual(random_amount(rng, 5_000)), office_time(rng, day), "FIN_MGR")
+
+    # 5. Διπλή πληρωμή: ίδιος προμηθευτής, ίδιο ποσό, 2 μέρες μετά
+    for _ in range(3):
+        day, amount, vendor = some_day(), random_amount(rng, 2_500), str(rng.choice(VENDORS))
+        for shift in (0, 2):
+            plant("duplicate", [("50.00", amount, 0.0), ("38.03", 0.0, amount)],
+                  office_time(rng, day + pd.Timedelta(days=shift)), "ACC_03",
+                  description="Πληρωμή προμηθευτή", approved_by="FIN_MGR", vendor_id=vendor)
+
+    # 6. Στρογγυλό ποσό (ακέραιες χιλιάδες, πάνω από 10.000)
+    for _ in range(6):
+        plant("round_amount", accrual(float(rng.integers(11, 60)) * 1_000), office_time(rng, some_day()), "ACC_01")
+
+    # 7. Σαββατοκύριακο ή αργία
+    odd_days = [pd.Timestamp(d) for d in ("2025-02-15", "2025-05-01", "2025-06-22", "2025-08-15",
+                                           "2025-09-13", "2025-10-28", "2025-11-30", "2025-12-25")]
+    for day in odd_days:
+        plant("weekend_holiday", accrual(random_amount(rng, 1_500)), office_time(rng, day), "ACC_04")
+
+    # 8. Σπάνιος λογαριασμός: «Έκτακτα αποτελέσματα» χρησιμοποιείται μόνο 3 φορές
+    for _ in range(3):
+        plant("rare_account", accrual(random_amount(rng, 3_000), debit_account="81.00"),
+              office_time(rng, some_day()), "ACC_02")
+
+    # 9. Ακραίο ποσό για τον λογαριασμό: αγορά εμπορευμάτων ~80 φορές μεγαλύτερη από το σύνηθες
+    for _ in range(4):
+        net = random_amount(rng, 50_000)
+        plant("robust_z_outlier", [("20.00", net, 0.0), ("50.00", 0.0, net)], office_time(rng, some_day()),
+              "ACC_03", source="Automatic", description="Τιμολόγιο αγοράς", vendor_id=str(rng.choice(VENDORS)))
+
+    # 10. Εκτός ωραρίου (βράδυ ή ξημερώματα)
+    for hour in (20, 21, 22, 2, 5):
+        plant("after_hours", accrual(random_amount(rng, 1_500)), some_day() + pd.Timedelta(hours=hour), "ACC_01")
+
+    # 11. Κενή αιτιολογία
+    for _ in range(5):
+        plant("no_description", accrual(random_amount(rng, 1_500)), office_time(rng, some_day()), "ACC_02",
+              description=None)
+
+    # 12. Η «βελόνα στα άχυρα»: πολλά red flags μαζί -> πρέπει να βγει ΠΡΩΤΗ στη λίστα
+    for entry in ("2025-12-28 22:10", "2026-01-11 21:30", "2025-06-22 23:05",
+                  "2026-02-01 20:45", "2025-12-21 19:40"):        # όλες Κυριακή βράδυ
+        entry = pd.Timestamp(entry)
+        posting = cfg.FISCAL_YEAR_END if entry.year == 2026 else None
+        plant("multi_flag", accrual(float(rng.integers(20, 90)) * 1_000), entry, "CFO",
+              posting_date=posting, description=None)
+
+    # 13. Benford: ο ACC_04 «φτιάχνει» πληρωμές λίγο κάτω από το όριο έγκρισης των 5.000 €
+    for _ in range(150):
+        amount = round(float(rng.uniform(4_800, 4_999)), 2)
+        plant("benford_fabricated", [("50.00", amount, 0.0), ("38.03", 0.0, amount)],
+              office_time(rng, some_day()), "ACC_04", description="Πληρωμή προμηθευτή",
+              approved_by="FIN_MGR", vendor_id=str(rng.choice(VENDORS)))
+
+    return pd.DataFrame(truth, columns=["journal_id", "anomaly_type"])
