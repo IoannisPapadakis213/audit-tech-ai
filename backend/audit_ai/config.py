@@ -102,3 +102,11 @@ RAW_DIR = DATA_DIR / "raw"
 GL_CSV = RAW_DIR / "general_ledger_2025.csv"
 TB_CSV = RAW_DIR / "trial_balance_2025.csv"
 GROUND_TRUTH_CSV = RAW_DIR / "ground_truth.csv"
+
+# ---------- Αναφορές ----------
+REPORTS_DIR = DATA_DIR / "reports"
+DQ_REPORT_XLSX = REPORTS_DIR / "dq_report.xlsx"
+
+# ---------- Αναφορές ----------
+REPORTS_DIR = DATA_DIR / "reports"
+DQ_REPORT_XLSX = REPORTS_DIR / "dq_report.xlsx"

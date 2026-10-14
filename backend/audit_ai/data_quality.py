@@ -103,3 +103,75 @@ def quarantine(gl):
     q["dq_reason"] = reasons[in_quarantine].str.rstrip("; ").replace("", "same_journal")
     clean = gl[~in_quarantine].copy()
     return clean, q, pd.DataFrame(summary)
+
+
+# ======================= Μέρος Γ: όλα μαζί + αναφορά Excel =======================
+
+def run(gl, tb):
+    """Η πλήρης πύλη ποιότητας, με τη σωστή σειρά. Επιστρέφει dict με όλα τα αποτελέσματα.
+
+    1. Σχήμα -> αν λείπει στήλη: SchemaError (STOP)
+    2. Συμφωνία GL ↔ Ισοζύγιο στο ΠΛΗΡΕΣ GL -> αν δεν συμφωνεί: ReconciliationError (STOP)
+    3. Καραντίνα -> τα κακά journals βγαίνουν στην άκρη, τα καθαρά προχωρούν
+    """
+    check_schema(gl)
+    reconciliation = reconcile(gl, tb)
+    clean, quarantined, summary = quarantine(gl)
+    return {"clean": clean, "quarantine": quarantined, "summary": summary,
+            "reconciliation": reconciliation}
+
+
+def write_report(result, path=cfg.DQ_REPORT_XLSX):
+    """Γράφει το working paper του ελεγκτή: ένα Excel με 3 φύλλα."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with pd.ExcelWriter(path) as xl:
+        result["summary"].to_excel(xl, sheet_name="Σύνοψη", index=False)
+        result["quarantine"].to_excel(xl, sheet_name="Καραντίνα", index=False)
+        result["reconciliation"].to_excel(xl, sheet_name="Συμφωνία GL-TB", index=False)
+    return path
+
+
+if __name__ == "__main__":
+    gl, tb = read_raw()
+    result = run(gl, tb)
+    path = write_report(result)
+    print(f"Συμφωνία GL-TB: {(result['reconciliation']['status'] == 'OK').sum()} λογαριασμοί OK")
+    print(f"Καθαρές γραμμές: {len(result['clean'])} | Σε καραντίνα: {len(result['quarantine'])} "
+          f"({result['quarantine']['journal_id'].nunique()} journals)")
+    print(f"Αναφορά -> {path}")
+
+
+# ======================= Μέρος Γ: όλα μαζί + αναφορά Excel =======================
+
+def run(gl, tb):
+    """Η πλήρης πύλη ποιότητας, με τη σωστή σειρά. Επιστρέφει dict με όλα τα αποτελέσματα.
+
+    1. Σχήμα -> αν λείπει στήλη: SchemaError (STOP)
+    2. Συμφωνία GL ↔ Ισοζύγιο στο ΠΛΗΡΕΣ GL -> αν δεν συμφωνεί: ReconciliationError (STOP)
+    3. Καραντίνα -> τα κακά journals βγαίνουν στην άκρη, τα καθαρά προχωρούν
+    """
+    check_schema(gl)
+    reconciliation = reconcile(gl, tb)
+    clean, quarantined, summary = quarantine(gl)
+    return {"clean": clean, "quarantine": quarantined, "summary": summary,
+            "reconciliation": reconciliation}
+
+
+def write_report(result, path=cfg.DQ_REPORT_XLSX):
+    """Γράφει το working paper του ελεγκτή: ένα Excel με 3 φύλλα."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with pd.ExcelWriter(path) as xl:
+        result["summary"].to_excel(xl, sheet_name="Σύνοψη", index=False)
+        result["quarantine"].to_excel(xl, sheet_name="Καραντίνα", index=False)
+        result["reconciliation"].to_excel(xl, sheet_name="Συμφωνία GL-TB", index=False)
+    return path
+
+
+if __name__ == "__main__":
+    gl, tb = read_raw()
+    result = run(gl, tb)
+    path = write_report(result)
+    print(f"Συμφωνία GL-TB: {(result['reconciliation']['status'] == 'OK').sum()} λογαριασμοί OK")
+    print(f"Καθαρές γραμμές: {len(result['clean'])} | Σε καραντίνα: {len(result['quarantine'])} "
+          f"({result['quarantine']['journal_id'].nunique()} journals)")
+    print(f"Αναφορά -> {path}")
