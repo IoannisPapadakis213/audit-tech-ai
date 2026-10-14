@@ -190,3 +190,86 @@ def plant_anomalies(led, rng):
               approved_by="FIN_MGR", vendor_id=str(rng.choice(VENDORS)))
 
     return pd.DataFrame(truth, columns=["journal_id", "anomaly_type"])
+
+
+# ======================= Μέρος Δ: βρώμικα δεδομένα, Ισοζύγιο, αποθήκευση =======================
+
+def inject_dirty_data(gl, rng):
+    """Χαλάει σκόπιμα 5 journals, όπως θα τα έβγαζε ένα ERP με λάθη. Επιστρέφει (gl, dirty_truth)."""
+    gl = gl.copy()
+    clean_ids = gl.loc[gl["description"].eq("Τιμολόγιο πώλησης"), "journal_id"].unique()
+    picked = rng.choice(clean_ids, size=5, replace=False)
+    first_line = lambda jid: gl.index[gl["journal_id"].eq(jid)][0]
+
+    gl.loc[first_line(picked[0]), "created_by"] = None                       # κενό υποχρεωτικό πεδίο
+    gl = pd.concat([gl, gl.loc[[first_line(picked[1])]]])                     # η ίδια γραμμή δύο φορές
+    gl.loc[gl["journal_id"].eq(picked[2]), "posting_date"] = pd.Timestamp("2024-12-15")   # εκτός χρήσης
+    gl.loc[first_line(picked[3]), "account"] = "99.99"                        # άγνωστος λογαριασμός
+    gl.loc[first_line(picked[4]), "debit"] += 100.0                           # δεν ισοσκελίζει
+
+    kinds = ("dq_missing_field", "dq_duplicate_id", "dq_out_of_period", "dq_unknown_account", "dq_unbalanced")
+    dirty = pd.DataFrame({"journal_id": picked, "anomaly_type": kinds})
+    return gl.sort_values(["journal_id", "line_id"]).reset_index(drop=True), dirty
+
+
+def opening_balances(rng):
+    """Υπόλοιπα αρχής χρήσης (1/1/2025): μόνο λογαριασμοί ισολογισμού, και πρέπει να ισοσκελίζουν.
+
+    Πρόσημο: + = χρεωστικό, − = πιστωτικό. Το μετοχικό κεφάλαιο «κλείνει» τη διαφορά.
+    """
+    balances = {
+        "14.00": 400_000.0, "20.00": 150_000.0, "30.00": 220_000.0, "38.03": 1_500_000.0,
+        "50.00": -500_000.0, "53.00": -40_000.0, "54.00": -35_000.0, "55.00": -25_000.0,
+    }
+    balances = {acc: round(value * rng.uniform(0.9, 1.1), 2) for acc, value in balances.items()}
+    balances["40.00"] = -round(sum(balances.values()), 2)
+    return balances
+
+
+def build_trial_balance(gl, opening):
+    """Ισοζύγιο: υπόλοιπο αρχής + κινήσεις χρήσης = υπόλοιπο τέλους, ανά λογαριασμό."""
+    in_year = gl[gl["posting_date"].between(cfg.FISCAL_YEAR_START, cfg.FISCAL_YEAR_END)]
+    moves = in_year.groupby("account")[["debit", "credit"]].sum()
+    moves.columns = ["period_debit", "period_credit"]
+
+    tb = moves.join(pd.Series(opening, name="opening_balance"), how="outer").fillna(0.0)
+    tb["closing_balance"] = tb["opening_balance"] + tb["period_debit"] - tb["period_credit"]
+    tb = tb.round(2).rename_axis("account").reset_index()
+    return tb[["account", "opening_balance", "period_debit", "period_credit", "closing_balance"]]
+
+
+def generate(seed=42, break_tb=False):
+    """Φτιάχνει τα πάντα. Επιστρέφει (gl, tb, truth).
+
+    break_tb=True: το GL που «παραδίδει» ο πελάτης χάνει 3 journals μετά τη δημιουργία του
+    Ισοζυγίου, δηλαδή το extract είναι ΕΛΛΙΠΕΣ. Το Data Quality πρέπει να το καταλάβει και να σταματήσει.
+    """
+    rng = np.random.default_rng(seed)
+    led = Ledger()
+    normal_activity(led, rng)
+    truth = plant_anomalies(led, rng)
+    gl, dirty = inject_dirty_data(led.to_frame(), rng)
+    tb = build_trial_balance(gl, opening_balances(rng))
+
+    if break_tb:
+        lost = gl["journal_id"].drop_duplicates().sample(3, random_state=seed)
+        gl = gl[~gl["journal_id"].isin(lost)].reset_index(drop=True)
+
+    return gl, tb, pd.concat([truth, dirty], ignore_index=True)
+
+
+def save(gl, tb, truth, raw_dir=cfg.RAW_DIR):
+    """Γράφει τα 3 αρχεία σε CSV, όπως θα τα παίρναμε από τον πελάτη."""
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    paths = {"gl": raw_dir / cfg.GL_CSV.name, "tb": raw_dir / cfg.TB_CSV.name,
+             "truth": raw_dir / cfg.GROUND_TRUTH_CSV.name}
+    gl.to_csv(paths["gl"], index=False)
+    tb.to_csv(paths["tb"], index=False)
+    truth.to_csv(paths["truth"], index=False)
+    return paths
+
+
+if __name__ == "__main__":
+    gl, tb, truth = generate()
+    for name, path in save(gl, tb, truth).items():
+        print(f"{name:6s} -> {path}")

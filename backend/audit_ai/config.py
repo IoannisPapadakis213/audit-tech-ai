@@ -96,3 +96,9 @@ RULE_WEIGHTS = {
     "no_description": 1,      # κενή αιτιολογία
 }
 RISK_SCORE_THRESHOLD = 6      # από 6 πόντους και πάνω -> λίστα ελεγκτή
+
+# ---------- Αρχεία δεδομένων ----------
+RAW_DIR = DATA_DIR / "raw"
+GL_CSV = RAW_DIR / "general_ledger_2025.csv"
+TB_CSV = RAW_DIR / "trial_balance_2025.csv"
+GROUND_TRUTH_CSV = RAW_DIR / "ground_truth.csv"
