@@ -1,8 +1,8 @@
-"""Το pipeline από άκρη σε άκρη: αρχεία πελάτη -> ποιότητα -> transform -> βάση -> κανόνες."""
+"""Το pipeline από άκρη σε άκρη: αρχεία πελάτη -> ποιότητα -> transform -> βάση -> κανόνες -> Benford."""
 from audit_ai import config as cfg
 from audit_ai import data_quality as dq
 from audit_ai import database as db
-from audit_ai import rules, transform
+from audit_ai import benford, rules, transform
 
 
 def run(gl_path=cfg.GL_CSV, tb_path=cfg.TB_CSV, db_path=cfg.DB_PATH):
@@ -18,6 +18,7 @@ def run(gl_path=cfg.GL_CSV, tb_path=cfg.TB_CSV, db_path=cfg.DB_PATH):
         db.save_table(conn, "dq_reconciliation", result["reconciliation"])
         db.save_table(conn, "silver_gl", silver)
         rules.run_rules(conn)                     # gold: rule_hits
+        benford.run_benford(conn)                 # gold: benford_overall, benford_by_user
     return db_path
 
 
