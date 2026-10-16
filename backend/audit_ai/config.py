@@ -110,3 +110,6 @@ DQ_REPORT_XLSX = REPORTS_DIR / "dq_report.xlsx"
 # ---------- Αναφορές ----------
 REPORTS_DIR = DATA_DIR / "reports"
 DQ_REPORT_XLSX = REPORTS_DIR / "dq_report.xlsx"
+
+# ---------- Βάση δεδομένων ----------
+DB_PATH = DATA_DIR / "audit.db"
