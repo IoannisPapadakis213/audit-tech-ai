@@ -1,4 +1,4 @@
-"""Εξαγωγή για Power BI: star schema σε CSV.
+"""Εξαγωγή για Power BI: star schema σε CSV και σε ένα Excel (για το Power BI στον browser).
 
 Star schema = στο κέντρο οι πίνακες γεγονότων (facts: «τι συνέβη»), γύρω οι διαστάσεις
 (dimensions: «ποιος, πότε, πού»). Το Power BI δουλεύει καλύτερα, πιο γρήγορα και πιο απλά έτσι.
@@ -10,6 +10,8 @@ Star schema = στο κέντρο οι πίνακες γεγονότων (facts:
     dim_digit (Benford)    trial_balance (συμφωνία GL-TB)
 """
 import pandas as pd
+from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 from audit_ai import config as cfg
 from audit_ai import database as db
@@ -80,9 +82,28 @@ def export(conn, out_dir=cfg.POWERBI_DIR):
     return tables
 
 
+def export_excel(conn, path=None):
+    """Ένα Excel, ένα φύλλο ανά πίνακα, και κάθε φύλλο ως «Excel Table».
+    Το Power BI στον browser διαβάζει κάθε Excel Table ως ξεχωριστό πίνακα του μοντέλου."""
+    path = path or cfg.POWERBI_DIR / "audit_model.xlsx"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tables = build_star_schema(conn)
+    with pd.ExcelWriter(path, engine="openpyxl") as xl:
+        for name, df in tables.items():
+            df.to_excel(xl, sheet_name=name, index=False)
+            sheet = xl.sheets[name]
+            ref = f"A1:{get_column_letter(df.shape[1])}{len(df) + 1}"
+            table = Table(displayName=name, ref=ref)
+            table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True)
+            sheet.add_table(table)
+    return path
+
+
 if __name__ == "__main__":
     with db.connect() as conn:
         tables = export(conn)
+        xlsx = export_excel(conn)
     for name, df in tables.items():
         print(f"{name:20s} {len(df):6d} γραμμές")
     print(f"\nΦάκελος -> {cfg.POWERBI_DIR}")
+    print(f"Excel για Power BI -> {xlsx}")
