@@ -14,3 +14,4 @@ data/
 
 # macOS
 .DS_Store
+.env
