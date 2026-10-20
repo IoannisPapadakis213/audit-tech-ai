@@ -5,10 +5,15 @@ from functools import lru_cache
 import pandas as pd
 from fastapi import FastAPI
 
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
 from audit_ai.config import POWERBI_DIR
 
 app = FastAPI(title="Audit Tech AI – JET API")
 
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"],
+                   allow_methods=["GET", "POST"], allow_headers=["*"])
 
 @lru_cache
 def load(name: str) -> pd.DataFrame:
@@ -56,3 +61,12 @@ def benford():
     mad = float((d["actual"] - d["expected"]).abs().mean())
     return {"mad": round(mad, 4),
             "digits": d[["digit", "expected", "actual"]].to_dict(orient="records")}
+
+class Question(BaseModel):
+    question: str
+
+
+@app.post("/ask")
+def ask_agent(q: Question):
+    from audit_ai.agent import ask
+    return ask(q.question[:500])

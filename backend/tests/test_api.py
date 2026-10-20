@@ -25,3 +25,10 @@ def test_anomalies_sorted_by_risk():
 
 def test_benford_has_nine_digits():
     assert len(client.get("/benford").json()["digits"]) == 9
+
+
+def test_ask_endpoint_calls_agent(monkeypatch):
+    import audit_ai.agent as agent
+    monkeypatch.setattr(agent, "ask", lambda q: {"answer": "ok:" + q, "tools_used": []})
+    r = client.post("/ask", json={"question": "hi"}).json()
+    assert r["answer"] == "ok:hi"
