@@ -3,6 +3,9 @@
 from functools import lru_cache
 
 import os
+import time
+from pathlib import Path
+from fastapi.staticfiles import StaticFiles
 
 import pandas as pd
 from fastapi import FastAPI
@@ -72,4 +75,18 @@ class Question(BaseModel):
 @app.post("/ask")
 def ask_agent(q: Question):
     from audit_ai.agent import ask
-    return ask(q.question[:500])
+    for attempt in range(2):
+        try:
+            return ask(q.question[:500])
+        except Exception:
+            if attempt == 0:
+                time.sleep(2)
+    return {"answer": "The AI model is busy right now. Please try again in a minute.",
+            "tools_used": []}
+
+
+
+# Η σελίδα React (αν έχει γίνει build). Μπαίνει ΤΕΛΕΥΤΑΙΑ, ώστε τα /stats, /ask κ.λπ. να έχουν προτεραιότητα.
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+if FRONTEND_DIR.exists():
+    app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")

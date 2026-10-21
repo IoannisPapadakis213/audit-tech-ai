@@ -32,3 +32,17 @@ def test_ask_endpoint_calls_agent(monkeypatch):
     monkeypatch.setattr(agent, "ask", lambda q: {"answer": "ok:" + q, "tools_used": []})
     r = client.post("/ask", json={"question": "hi"}).json()
     assert r["answer"] == "ok:hi"
+
+
+def test_ask_fails_gracefully(monkeypatch):
+    import audit_ai.agent as agent
+    import audit_ai.api as api
+
+    def boom(q):
+        raise RuntimeError("503 model overloaded")
+
+    monkeypatch.setattr(agent, "ask", boom)
+    monkeypatch.setattr(api.time, "sleep", lambda s: None)
+    r = client.post("/ask", json={"question": "hi"})
+    assert r.status_code == 200
+    assert "busy" in r.json()["answer"]
