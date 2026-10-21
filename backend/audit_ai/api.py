@@ -2,6 +2,8 @@
 Επιστρέφει μόνο ό,τι έχει ήδη υπολογίσει το pipeline – δεν υπολογίζει κάτι νέο."""
 from functools import lru_cache
 
+import os
+
 import pandas as pd
 from fastapi import FastAPI
 
@@ -12,7 +14,8 @@ from audit_ai.config import POWERBI_DIR
 
 app = FastAPI(title="Audit Tech AI – JET API")
 
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"],
+ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
                    allow_methods=["GET", "POST"], allow_headers=["*"])
 
 @lru_cache
