@@ -1,25 +1,27 @@
 """REST API: δίνει τα αποτελέσματα του JET σε frontend και AI agent.
 Επιστρέφει μόνο ό,τι έχει ήδη υπολογίσει το pipeline – δεν υπολογίζει κάτι νέο."""
-from functools import lru_cache
-
+import logging
 import os
 import time
+from functools import lru_cache
 from pathlib import Path
-from fastapi.staticfiles import StaticFiles
 
 import pandas as pd
 from fastapi import FastAPI
-
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from audit_ai.config import POWERBI_DIR
+
+log = logging.getLogger("audit_ai")
 
 app = FastAPI(title="Audit Tech AI – JET API")
 
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 app.add_middleware(CORSMiddleware, allow_origins=ALLOWED_ORIGINS,
                    allow_methods=["GET", "POST"], allow_headers=["*"])
+
 
 @lru_cache
 def load(name: str) -> pd.DataFrame:
@@ -58,7 +60,22 @@ def anomalies(limit: int = 50):
         .sort_values("risk_score", ascending=False)
         .head(limit)
     )
+    # Τεκμηρίωση: ποιοι κανόνες χτύπησαν σε κάθε journal
+    hits = load("fact_rule_hits")
+    reasons = hits.groupby("journal_id")["rule"].apply(lambda s: sorted(set(s))).to_dict()
+    journals["rules"] = journals["journal_id"].map(lambda j: reasons.get(j, []))
     return journals.to_dict(orient="records")
+
+
+@app.get("/high-risk-by-user")
+def high_risk_by_user():
+    """Πόσα high-risk journals καταχώρησε κάθε χρήστης (συγκεντρωτικά, όχι γραμμές)."""
+    lines = load("fact_journal_lines")
+    high = lines[lines["is_high_risk"] == 1]
+    out = (high.groupby("created_by")["journal_id"].nunique()
+           .sort_values(ascending=False)
+           .reset_index(name="high_risk_journals"))
+    return out.to_dict(orient="records")
 
 
 @app.get("/benford")
@@ -68,22 +85,35 @@ def benford():
     return {"mad": round(mad, 4),
             "digits": d[["digit", "expected", "actual"]].to_dict(orient="records")}
 
+
 class Question(BaseModel):
     question: str
 
 
+# Μνήμη απαντήσεων: ίδια ερώτηση = ίδια απάντηση, χωρίς νέα κλήση στο AI (τα δεδομένα δεν αλλάζουν).
+ANSWER_CACHE: dict[str, dict] = {}
+MAX_CACHE = 200
+
+
 @app.post("/ask")
 def ask_agent(q: Question):
-    from audit_ai.agent import ask
-    for attempt in range(2):
+    """Πρώτα η μνήμη, μετά το κύριο μοντέλο, μετά το εφεδρικό. Αν αποτύχουν όλα, απαντά ευγενικά."""
+    from audit_ai.agent import MODELS, ask
+    question = q.question[:500]
+    key = " ".join(question.lower().split())
+    if key in ANSWER_CACHE:
+        return ANSWER_CACHE[key]
+    for model in MODELS:
         try:
-            return ask(q.question[:500])
-        except Exception:
-            if attempt == 0:
-                time.sleep(2)
+            result = ask(question, model=model.strip())
+            if result.get("tools_used") and len(ANSWER_CACHE) < MAX_CACHE:
+                ANSWER_CACHE[key] = result      # κρατάμε μόνο απαντήσεις που στηρίχτηκαν σε εργαλεία
+            return result
+        except Exception as e:
+            log.warning("AI model %s failed: %s", model, e)
+            time.sleep(1)
     return {"answer": "The AI model is busy right now. Please try again in a minute.",
             "tools_used": []}
-
 
 
 # Η σελίδα React (αν έχει γίνει build). Μπαίνει ΤΕΛΕΥΤΑΙΑ, ώστε τα /stats, /ask κ.λπ. να έχουν προτεραιότητα.
